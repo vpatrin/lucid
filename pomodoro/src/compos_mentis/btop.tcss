@@ -1,0 +1,205 @@
+/* Compos Mentis — btop theme */
+
+Screen {
+    background: $surface;
+}
+
+#root {
+    width: 100%;
+    height: 1fr;
+}
+
+/* ── Size warning (shown when terminal too small) ── */
+
+#size-warning {
+    width: 100%;
+    height: 100%;
+    display: none;
+    content-align: center middle;
+    color: #d08770;
+}
+
+/* ── Grid rows ── */
+
+#top-row {
+    width: 100%;
+    height: 9;
+}
+
+#bottom-row {
+    width: 100%;
+    height: 1fr;
+    min-height: 10;
+}
+
+/* ── Panels ── */
+
+#timer-panel {
+    width: 3fr;
+    height: 100%;
+    border: round #2a5c5c;
+    border-title-color: #5ccfe6;
+    border-title-style: bold;
+    padding: 0 1;
+}
+
+#session-panel {
+    width: 2fr;
+    height: 100%;
+    border: round #2a5c5c;
+    border-title-color: #5ccfe6;
+    border-title-style: bold;
+    padding: 1 2;
+}
+
+#pulse-panel {
+    width: 3fr;
+    height: 100%;
+    border: round #2a5c5c;
+    border-title-color: #5ccfe6;
+    border-title-style: bold;
+    padding: 1 2;
+}
+
+#log-panel {
+    width: 2fr;
+    height: 100%;
+    border: round #2a5c5c;
+    border-title-color: #5ccfe6;
+    border-title-style: bold;
+    padding: 1 2;
+}
+
+/* ── Timer panel contents ── */
+
+#clock {
+    text-align: right;
+    width: 100%;
+    color: #7b88a1;
+    height: 1;
+}
+
+#timer {
+    width: 100%;
+    text-align: center;
+    color: #7b88a1;
+}
+
+#timer.work {
+    color: #a3be8c;
+}
+
+#timer.on-break {
+    color: #88c0d0;
+}
+
+#timer.paused {
+    color: #4c566a;
+}
+
+#progress {
+    width: 100%;
+    height: 1;
+}
+
+/* ── Session panel ── */
+
+#session-info {
+    width: 100%;
+    height: auto;
+}
+
+/* ── Pulse panel ── */
+
+#pulse-chart {
+    width: 100%;
+    height: 1fr;
+}
+
+/* ── Log panel ── */
+
+#log-content {
+    width: 100%;
+    height: 1fr;
+}
+
+/* ── Reflect panel ── */
+
+#reflect-panel {
+    width: 100%;
+    border: round #d08770;
+    border-title-color: #d08770;
+    border-title-style: bold;
+    padding: 0 2;
+    display: none;
+    height: auto;
+    max-height: 8;
+}
+
+#reflect-input-row {
+    width: 100%;
+    height: 3;
+}
+
+#reflect-input-label {
+    width: 10;
+    color: #5c7a7a;
+    padding: 1 0;
+}
+
+#note-input {
+    width: 1fr;
+    border: none;
+    background: transparent;
+    color: #d8dee9;
+    padding: 0;
+    margin: 1 0;
+    height: 1;
+}
+
+#note-input:focus {
+    border: none;
+}
+
+#reflect-display {
+    width: 100%;
+    padding: 1 0;
+    display: none;
+}
+
+/* ── Aphorism ── */
+
+#aphorism-text {
+    width: 100%;
+    text-align: center;
+    color: #5c7a7a;
+    text-style: italic;
+    height: 1;
+    margin: 0;
+}
+
+#aphorism-attr {
+    width: 100%;
+    text-align: center;
+    color: #3d5656;
+    height: 1;
+    margin: 0;
+}
+
+/* ── Footer ── */
+
+Footer {
+    background: $surface;
+}
+
+FooterKey {
+    background: transparent;
+    color: #7b88a1;
+    .footer-key--key {
+        background: transparent;
+        color: #5ccfe6;
+    }
+    .footer-key--description {
+        color: #7b88a1;
+    }
+}
