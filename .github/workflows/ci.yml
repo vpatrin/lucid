@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      pomodoro: ${{ steps.filter.outputs.pomodoro }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            pomodoro:
+              - 'pomodoro/**'
+
+  lint:
+    needs: [changes]
+    if: needs.changes.outputs.pomodoro == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: cd pomodoro && uv sync --frozen
+      - run: cd pomodoro && uv run ruff check src/
+      - run: cd pomodoro && uv run ruff format --check src/
+
+  test:
+    needs: [changes]
+    if: needs.changes.outputs.pomodoro == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: cd pomodoro && uv sync --frozen
+      - run: cd pomodoro && uv run pytest
+
+  ci:
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: |
+          for result in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.test.result }}"
+          do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              exit 1
+            fi
+          done

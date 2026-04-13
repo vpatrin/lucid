@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import argparse
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
 
-from textual import events, on
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Digits, Footer, Input, Label, Static
 
 MIN_WIDTH = 80
@@ -77,20 +77,8 @@ APHORISMS = [
 ]
 
 
-def to_roman(n: int) -> str:
-    if n <= 0:
-        return "\u2014"
-    vals = [
-        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
-        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
-        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
-    ]
-    result = ""
-    for value, numeral in vals:
-        while n >= value:
-            result += numeral
-            n -= value
-    return result
+def _fmt_session_num(n: int) -> str:
+    return "\u2014" if n <= 0 else str(n)
 
 
 def _interpolate_color(c1: str, c2: str, t: float) -> str:
@@ -105,6 +93,7 @@ def _interpolate_color(c1: str, c2: str, t: float) -> str:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # App
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 class PomodoroApp(App):
     TITLE = "COMPOS MENTIS"
@@ -184,9 +173,14 @@ class PomodoroApp(App):
         self.query_one("#log-panel").border_title = "log"
         self.query_one("#reflect-panel").border_title = "reflect"
 
+        # Prevent Input from stealing focus on mount
+        self.query_one("#note-input", Input).can_focus = False
+        self.set_focus(None)
+
         # Initial display
         self._update_clock()
         self._update_display()
+        self._update_chrome()
         self._update_panels()
         self._set_aphorism()
 
@@ -222,10 +216,9 @@ class PomodoroApp(App):
     def _update_display(self) -> None:
         remaining = max(0, self.total - self.elapsed)
         mm, ss = divmod(remaining, 60)
-        self.query_one("#timer", Digits).update(f"{mm:02d}:{ss:02d}")
 
-        # Timer color class
         timer = self.query_one("#timer", Digits)
+        timer.update(f"{mm:02d}:{ss:02d}")
         timer.remove_class("work", "on-break", "paused")
         cls = {
             PomodoroState.WORKING: "work",
@@ -235,10 +228,9 @@ class PomodoroApp(App):
         if cls:
             timer.add_class(cls)
 
-        # Progress bar
         self.query_one("#progress", Static).update(self._render_progress())
 
-        # Timer panel border title
+    def _update_chrome(self) -> None:
         title_map = {
             PomodoroState.IDLE: "timer",
             PomodoroState.WORKING: "timer \u00b7 work",
@@ -258,7 +250,6 @@ class PomodoroApp(App):
         }
         panel.styles.border_title_color = color_map.get(self.state, BORDER_CYAN)
 
-        # Session panel
         self.query_one("#session-info", Static).update(self._render_session_info())
 
     def _update_panels(self) -> None:
@@ -285,21 +276,21 @@ class PomodoroApp(App):
 
         progress = max(0.0, min(1.0, progress))
         pct = int(progress * 100)
-        bar_width = 36
+        # Dynamic: panel width minus padding (2+2), prefix (2), suffix (6 for "  XXX%")
+        progress_widget = self.query_one("#progress", Static)
+        bar_width = max(10, progress_widget.size.width - 8) if progress_widget.size.width > 0 else 36
         filled = int(bar_width * progress)
         empty = bar_width - filled
 
         bar = ""
         if filled > 0:
             if self.state == PomodoroState.WORKING:
-                for i in range(filled):
-                    t = i / max(filled - 1, 1)
-                    color = _interpolate_color(WORK_COLOR, WORK_COLOR_END, t)
-                    bar += f"[{color}]\u2588[/]"
+                c_start = _interpolate_color(WORK_COLOR, WORK_COLOR_END, 0)
+                c_end = _interpolate_color(WORK_COLOR, WORK_COLOR_END, 1)
+                bar += f"[{c_start}]" + "\u2588" * (filled // 2) + "[/]"
+                bar += f"[{c_end}]" + "\u2588" * (filled - filled // 2) + "[/]"
             elif self.state == PomodoroState.ON_BREAK:
                 bar += f"[{BREAK_COLOR}]" + "\u2588" * filled + "[/]"
-            elif self.state == PomodoroState.PAUSED:
-                bar += f"[{DIM_COLOR}]" + "\u2588" * filled + "[/]"
             else:
                 bar += f"[{DIM_COLOR}]" + "\u2588" * filled + "[/]"
 
@@ -309,25 +300,28 @@ class PomodoroApp(App):
 
     def _render_session_info(self) -> str:
         if self.state == PomodoroState.IDLE:
-            numeral = to_roman(self.pomodoro_count + 1)
+            numeral = _fmt_session_num(self.pomodoro_count + 1)
             started = "\u2014"
         elif self.state in (PomodoroState.NOTE_INPUT, PomodoroState.ENERGY_INPUT, PomodoroState.FOCUS_INPUT):
-            numeral = to_roman(self.pomodoro_count)
+            numeral = _fmt_session_num(self.pomodoro_count)
             started = self._completed_session_start.strftime("%H:%M") if self._completed_session_start else "\u2014"
         else:
-            numeral = to_roman(self.pomodoro_count + 1) if self.state == PomodoroState.WORKING else to_roman(self.pomodoro_count)
+            if self.state == PomodoroState.WORKING:
+                numeral = _fmt_session_num(self.pomodoro_count + 1)
+            else:
+                numeral = _fmt_session_num(self.pomodoro_count)
             started = self.session_start.strftime("%H:%M") if self.session_start else "\u2014"
 
         wm, bm = self.work_seconds // 60, self.break_seconds // 60
         log_str = str(self.log_dir)
-        if len(log_str) > 18:
-            log_str = "\u2026" + log_str[-17:]
+        if len(log_str) > 15:
+            log_str = "\u2026" + log_str[-14:]
 
         return (
-            f"[{LABEL_TEAL}]#       [/] [{TEXT_PRIMARY}]{numeral}[/]\n"
-            f"[{LABEL_TEAL}]started [/] [{TEXT_PRIMARY}]{started}[/]\n"
-            f"[{LABEL_TEAL}]config  [/] [{TEXT_PRIMARY}]{wm}m / {bm}m[/]\n"
-            f"[{LABEL_TEAL}]log     [/] [{TEXT_PRIMARY}]{log_str}[/]"
+            f"[{LABEL_TEAL}]#        [/][{TEXT_PRIMARY}]{numeral}[/]\n"
+            f"[{LABEL_TEAL}]started  [/][{TEXT_PRIMARY}]{started}[/]\n"
+            f"[{LABEL_TEAL}]config   [/][{TEXT_PRIMARY}]{wm}m / {bm}m[/]\n"
+            f"[{LABEL_TEAL}]log_dir  [/][{TEXT_PRIMARY}]{log_str}[/]"
         )
 
     def _render_pulse_chart(self) -> str:
@@ -342,7 +336,13 @@ class PomodoroApp(App):
         if not sessions:
             return ""
 
-        sessions = sessions[-8:]
+        # Dynamic: fit as many sessions as the panel width allows
+        # Each pair is 2 chars + 2 spacing = 4 chars, plus 2 indent
+        pulse_widget = self.query_one("#pulse-chart", Static)
+        panel_width = pulse_widget.size.width if pulse_widget.size.width > 0 else 40
+        max_sessions = max(1, (panel_width - 2) // 4)
+        sessions = sessions[-max_sessions:]
+
         max_height = 5
         lines: list[str] = []
 
@@ -354,11 +354,13 @@ class PomodoroApp(App):
                 parts.append(f"{e_char}{f_char}")
             lines.append("  " + "  ".join(parts))
 
-        # X-axis labels
+        # X-axis labels (absolute session numbers)
         labels: list[str] = []
+        total_with_pulse = sum(1 for e in self._today_log if e["type"] == "work" and e.get("energy") and e.get("focus"))
+        first_shown = total_with_pulse - len(sessions) + 1
         for i in range(len(sessions)):
-            numeral = to_roman(i + 1)
-            padded = f"{numeral:^4}"
+            num = str(first_shown + i)
+            padded = f"{num:^4}"
             labels.append(f"[{LABEL_TEAL}]{padded}[/]")
         lines.append("  " + "".join(labels))
 
@@ -374,7 +376,8 @@ class PomodoroApp(App):
         time_str = f"{hours}h {mins:02d}m" if hours else f"{mins}m"
 
         summary = f"[{TEXT_PRIMARY}]{time_str} \u00b7 {self.pomodoro_count} sessions[/]"
-        sep = f"[{SEPARATOR}]\u2576\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2574[/]"
+        sep_line = "\u2576" + "\u2500" * 21 + "\u2574"
+        sep = f"[{SEPARATOR}]{sep_line}[/]"
 
         if not work_entries:
             return f"{summary}\n{sep}\n[{LABEL_TEAL}]no sessions yet[/]"
@@ -384,9 +387,7 @@ class PomodoroApp(App):
             note = entry.get("note", "")
             if len(note) > 16:
                 note = note[:15] + "\u2026"
-            lines.append(
-                f"[{TEXT_SECONDARY}]{entry['start']}  {entry['duration']:>4}  {note}[/]"
-            )
+            lines.append(f"[{TEXT_SECONDARY}]{entry['start']}  {entry['duration']:>4}  {note}[/]")
 
         return "\n".join(lines)
 
@@ -428,27 +429,26 @@ class PomodoroApp(App):
             self._log_session("break", self.session_start, self.elapsed, "", 0, 0)
             self._start_work()
 
-    def _start_work(self) -> None:
-        self.state = PomodoroState.WORKING
-        self.total = self.work_seconds
+    def _begin_session(self, state: PomodoroState, total: int) -> None:
+        self.state = state
+        self.total = total
         self.elapsed = 0
         self.session_start = datetime.now()
         self._set_aphorism()
         self._update_display()
+        self._update_chrome()
         self._update_panels()
 
+    def _start_work(self) -> None:
+        self._begin_session(PomodoroState.WORKING, self.work_seconds)
+
     def _start_break(self) -> None:
-        self.state = PomodoroState.ON_BREAK
-        self.total = self.break_seconds
-        self.elapsed = 0
-        self.session_start = datetime.now()
-        self._set_aphorism()
-        self._update_display()
-        self._update_panels()
+        self._begin_session(PomodoroState.ON_BREAK, self.break_seconds)
 
     def _show_reflect(self) -> None:
         self.state = PomodoroState.NOTE_INPUT
         self._update_display()
+        self._update_chrome()
         self._update_panels()
 
         panel = self.query_one("#reflect-panel")
@@ -460,12 +460,14 @@ class PomodoroApp(App):
         self.query_one("#reflect-display").styles.display = "none"
 
         note_input = self.query_one("#note-input", Input)
+        note_input.can_focus = True
         note_input.value = ""
         note_input.focus()
 
     def _show_energy_input(self) -> None:
         self.state = PomodoroState.ENERGY_INPUT
         self._update_display()
+        self._update_chrome()
 
         # Hide input row, show display
         self.query_one("#reflect-input-row").styles.display = "none"
@@ -476,9 +478,12 @@ class PomodoroApp(App):
     def _show_focus_input(self) -> None:
         self.state = PomodoroState.FOCUS_INPUT
         self._update_display()
+        self._update_chrome()
         self.query_one("#reflect-display", Static).update(self._render_reflect_display())
 
     def _hide_reflect(self) -> None:
+        self.query_one("#note-input", Input).can_focus = False
+        self.set_focus(None)
         self.query_one("#reflect-panel").styles.display = "none"
 
     def _finalize_session(self) -> None:
@@ -522,10 +527,12 @@ class PomodoroApp(App):
             self.paused_from = self.state
             self.state = PomodoroState.PAUSED
             self._update_display()
+            self._update_chrome()
         elif self.state == PomodoroState.PAUSED:
             self.state = self.paused_from or PomodoroState.WORKING
             self.paused_from = None
             self._update_display()
+            self._update_chrome()
 
     def action_skip(self) -> None:
         if self.state == PomodoroState.PAUSED:
@@ -581,17 +588,31 @@ class PomodoroApp(App):
             if line.startswith("|") and not line.startswith("| #") and not line.startswith("|--"):
                 parts = [p.strip() for p in line.split("|")[1:-1]]
                 if len(parts) >= 8:
-                    self._today_log.append({
-                        "num": parts[0], "start": parts[1], "end": parts[2],
-                        "duration": parts[3], "type": parts[4],
-                        "energy": parts[5], "focus": parts[6], "note": parts[7],
-                    })
+                    self._today_log.append(
+                        {
+                            "num": parts[0],
+                            "start": parts[1],
+                            "end": parts[2],
+                            "duration": parts[3],
+                            "type": parts[4],
+                            "energy": parts[5],
+                            "focus": parts[6],
+                            "note": parts[7],
+                        }
+                    )
                 elif len(parts) >= 6:
-                    self._today_log.append({
-                        "num": parts[0], "start": parts[1], "end": parts[2],
-                        "duration": parts[3], "type": parts[4],
-                        "energy": "", "focus": "", "note": parts[5],
-                    })
+                    self._today_log.append(
+                        {
+                            "num": parts[0],
+                            "start": parts[1],
+                            "end": parts[2],
+                            "duration": parts[3],
+                            "type": parts[4],
+                            "energy": "",
+                            "focus": "",
+                            "note": parts[5],
+                        }
+                    )
 
     def _restore_from_log(self) -> None:
         work_sessions = [e for e in self._today_log if e["type"] == "work"]
@@ -620,11 +641,18 @@ class PomodoroApp(App):
         energy_str = str(energy) if energy else ""
         focus_str = str(focus) if focus else ""
 
-        self._today_log.append({
-            "num": str(self.pomodoro_count), "start": start_str, "end": end_str,
-            "duration": f"{duration_min}m", "type": session_type,
-            "energy": energy_str, "focus": focus_str, "note": note,
-        })
+        self._today_log.append(
+            {
+                "num": str(self.pomodoro_count),
+                "start": start_str,
+                "end": end_str,
+                "duration": f"{duration_min}m",
+                "type": session_type,
+                "energy": energy_str,
+                "focus": focus_str,
+                "note": note,
+            }
+        )
         self._write_daily_log()
 
     def _write_daily_log(self) -> None:
@@ -632,12 +660,7 @@ class PomodoroApp(App):
         log_path = self.log_dir / f"{today}.md"
 
         work_entries = [e for e in self._today_log if e["type"] == "work"]
-        total_minutes = 0
-        for e in work_entries:
-            try:
-                total_minutes += int(e["duration"].rstrip("m"))
-            except ValueError:
-                pass
+        total_minutes = self.total_work_seconds // 60
         hours = total_minutes // 60
         mins = total_minutes % 60
 
@@ -668,14 +691,18 @@ class PomodoroApp(App):
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 def main():
     parser = argparse.ArgumentParser(description="Compos Mentis \u2014 Pomodoro Timer TUI")
-    parser.add_argument("-w", "--work", type=int, default=DEFAULT_WORK_MINUTES,
-                        help="Work duration in minutes (default: 50)")
-    parser.add_argument("-b", "--break-time", type=int, default=DEFAULT_BREAK_MINUTES,
-                        help="Break duration in minutes (default: 10)")
-    parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR,
-                        help="Directory for daily log files (default: ./logs)")
+    parser.add_argument(
+        "-w", "--work", type=int, default=DEFAULT_WORK_MINUTES, help="Work duration in minutes (default: 50)"
+    )
+    parser.add_argument(
+        "-b", "--break-time", type=int, default=DEFAULT_BREAK_MINUTES, help="Break duration in minutes (default: 10)"
+    )
+    parser.add_argument(
+        "--log-dir", type=Path, default=DEFAULT_LOG_DIR, help="Directory for daily log files (default: ./logs)"
+    )
     args = parser.parse_args()
 
     app = PomodoroApp(

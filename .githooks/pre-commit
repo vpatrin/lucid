@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -e
+
+changed=$(git diff --cached --name-only -- 'pomodoro/')
+
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+echo "Linting pomodoro..."
+cd pomodoro && uv run ruff check src/ && uv run ruff format --check src/
