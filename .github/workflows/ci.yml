@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - run: cd pomodoro && uv sync --frozen
       - run: cd pomodoro && uv run ruff check src/
       - run: cd pomodoro && uv run ruff format --check src/
@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - run: cd pomodoro && uv sync --frozen
       - run: cd pomodoro && uv run pytest
 
