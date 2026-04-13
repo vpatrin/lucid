@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Running pre-push checks..."
+
+echo "Checking lock file..."
+cd pomodoro && uv lock --check && cd ..
+
+changed=$(git diff --name-only main..HEAD -- 'pomodoro/' 2>/dev/null || true)
+
+if [ -z "$changed" ]; then
+  echo "No pomodoro changes — skipping tests."
+  exit 0
+fi
+
+echo "Testing pomodoro..."
+cd pomodoro && uv run pytest
+
+echo "All checks passed."

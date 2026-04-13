@@ -31,7 +31,11 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["B", "E", "F", "I", "N", "RET", "RUF", "S", "SIM", "TCH", "UP"]
+ignore = [
+    "S311",    # random is fine for aphorisms
+    "RUF012",  # mutable class attrs — Textual BINDINGS pattern
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import random
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Digits, Footer, Input, Label, Static
+
+if TYPE_CHECKING:
+    from textual import events
 
 MIN_WIDTH = 80
 MIN_HEIGHT = 24
@@ -27,7 +31,6 @@ DEFAULT_WORK_MINUTES = 50
 DEFAULT_BREAK_MINUTES = 10
 
 WORK_COLOR = "#a3be8c"
-WORK_COLOR_END = "#ebcb8b"
 BREAK_COLOR = "#88c0d0"
 DIM_COLOR = "#4c566a"
 AMBER_COLOR = "#ebcb8b"
@@ -79,15 +82,6 @@ APHORISMS = [
 
 def _fmt_session_num(n: int) -> str:
     return "\u2014" if n <= 0 else str(n)
-
-
-def _interpolate_color(c1: str, c2: str, t: float) -> str:
-    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
-    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
-    r = int(r1 + (r2 - r1) * t)
-    g = int(g1 + (g2 - g1) * t)
-    b = int(b1 + (b2 - b1) * t)
-    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -197,6 +191,9 @@ class PomodoroApp(App):
         too_small = self.size.width < MIN_WIDTH or self.size.height < MIN_HEIGHT
         self.query_one("#size-warning").styles.display = "block" if too_small else "none"
         self.query_one("#root").styles.display = "none" if too_small else "block"
+        if not too_small:
+            self._update_display()
+            self._update_panels()
 
     # ── Tick ────────────────────────────────────────────────────────
 
@@ -285,10 +282,7 @@ class PomodoroApp(App):
         bar = ""
         if filled > 0:
             if self.state == PomodoroState.WORKING:
-                c_start = _interpolate_color(WORK_COLOR, WORK_COLOR_END, 0)
-                c_end = _interpolate_color(WORK_COLOR, WORK_COLOR_END, 1)
-                bar += f"[{c_start}]" + "\u2588" * (filled // 2) + "[/]"
-                bar += f"[{c_end}]" + "\u2588" * (filled - filled // 2) + "[/]"
+                bar += f"[{WORK_COLOR}]" + "\u2588" * filled + "[/]"
             elif self.state == PomodoroState.ON_BREAK:
                 bar += f"[{BREAK_COLOR}]" + "\u2588" * filled + "[/]"
             else:
@@ -325,47 +319,43 @@ class PomodoroApp(App):
         )
 
     def _render_pulse_chart(self) -> str:
-        sessions: list[tuple[int, int]] = []
+        sessions: list[tuple[int, int, int]] = []
         for entry in self._today_log:
             if entry["type"] == "work" and entry.get("energy") and entry.get("focus"):
                 try:
-                    sessions.append((int(entry["energy"]), int(entry["focus"])))
+                    num = int(entry["num"])
+                    sessions.append((num, int(entry["energy"]), int(entry["focus"])))
                 except ValueError:
                     pass
 
         if not sessions:
             return ""
 
-        # Dynamic: fit as many sessions as the panel width allows
-        # Each pair is 2 chars + 2 spacing = 4 chars, plus 2 indent
+        # Dynamic: fit as many sessions as the panel height allows
+        # Each session = 2 lines (energy bar + focus bar), plus 1 legend line
         pulse_widget = self.query_one("#pulse-chart", Static)
-        panel_width = pulse_widget.size.width if pulse_widget.size.width > 0 else 40
-        max_sessions = max(1, (panel_width - 2) // 4)
+        panel_height = pulse_widget.size.height if pulse_widget.size.height > 0 else 12
+        max_sessions = max(1, (panel_height - 1) // 2)
         sessions = sessions[-max_sessions:]
 
-        max_height = 5
+        # Bar width scales to panel width
+        panel_width = pulse_widget.size.width if pulse_widget.size.width > 0 else 40
+        max_bar = max(5, panel_width - 16)
+
         lines: list[str] = []
-
-        for row in range(max_height, 0, -1):
-            parts: list[str] = []
-            for energy, focus in sessions:
-                e_char = f"[{AMBER_COLOR}]\u2588[/]" if energy >= row else " "
-                f_char = f"[{WORK_COLOR}]\u2588[/]" if focus >= row else " "
-                parts.append(f"{e_char}{f_char}")
-            lines.append("  " + "  ".join(parts))
-
-        # X-axis labels (absolute session numbers)
-        labels: list[str] = []
-        total_with_pulse = sum(1 for e in self._today_log if e["type"] == "work" and e.get("energy") and e.get("focus"))
-        first_shown = total_with_pulse - len(sessions) + 1
-        for i in range(len(sessions)):
-            num = str(first_shown + i)
-            padded = f"{num:^4}"
-            labels.append(f"[{LABEL_TEAL}]{padded}[/]")
-        lines.append("  " + "".join(labels))
-
-        # Legend
-        lines.append(f"  [{AMBER_COLOR}]\u2588[/] energy  [{WORK_COLOR}]\u2588[/] focus")
+        for num, energy, focus in sessions:
+            e_bar = "\u2588" * int(energy / 5 * max_bar)
+            e_empty = "\u2591" * (max_bar - len(e_bar))
+            f_bar = "\u2588" * int(focus / 5 * max_bar)
+            f_empty = "\u2591" * (max_bar - len(f_bar))
+            e_line = (
+                f"[{LABEL_TEAL}]{num:>3}[/] [{AMBER_COLOR}]e[/] "
+                f"[{AMBER_COLOR}]{e_bar}[/][{EMPTY_BAR}]{e_empty}[/] [{TEXT_TERTIARY}]{energy}[/]"
+            )
+            lines.append(e_line)
+            lines.append(
+                f"    [{WORK_COLOR}]f[/] [{WORK_COLOR}]{f_bar}[/][{EMPTY_BAR}]{f_empty}[/] [{TEXT_TERTIARY}]{focus}[/]"
+            )
 
         return "\n".join(lines)
 
@@ -382,8 +372,13 @@ class PomodoroApp(App):
         if not work_entries:
             return f"{summary}\n{sep}\n[{LABEL_TEAL}]no sessions yet[/]"
 
+        # Dynamic: fit as many entries as the panel height allows
+        log_widget = self.query_one("#log-content", Static)
+        panel_height = log_widget.size.height if log_widget.size.height > 0 else 8
+        max_entries = max(1, panel_height - 2)
+
         lines = [summary, sep]
-        for entry in reversed(work_entries[-6:]):
+        for entry in reversed(work_entries[-max_entries:]):
             note = entry.get("note", "")
             if len(note) > 16:
                 note = note[:15] + "\u2026"
@@ -620,10 +615,8 @@ class PomodoroApp(App):
         total = 0
         for entry in work_sessions:
             dur = entry["duration"].rstrip("m")
-            try:
+            with contextlib.suppress(ValueError):
                 total += int(dur) * 60
-            except ValueError:
-                pass
         self.total_work_seconds = total
 
     def _log_session(
