@@ -1,13 +1,10 @@
-.PHONY: focus focus-dev focus-btop sync test clean
+.PHONY: focus focus-dev sync test clean
 
 # ── Pomodoro ───────────────────────────────────────────────
 focus:
 	cd pomodoro && uv run compos-mentis $(ARGS)
 
 focus-dev:
-	cd pomodoro && uv run compos-mentis -w 1 -b 1 $(ARGS)
-
-focus-btop:
 	cd pomodoro && uv run compos-mentis -w 1 -b 1 $(ARGS)
 
 sync:
